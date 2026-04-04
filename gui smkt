@@ -48,38 +48,105 @@ getgenv().SMKT_DISABLE = function()
     if CoreGui:FindFirstChild("SMKTHub") then CoreGui.SMKTHub:Destroy() end
 end
 
-local function cleanChar()
-    local c = LocalPlayer.Character
-    if not c then return end
-    for _, d in pairs(c:GetDescendants()) do
-        if d:IsA("BallSocketConstraint") or d:IsA("NoCollisionConstraint") or d:IsA("HingeConstraint") then 
-            pcall(function() d:Destroy() end)
-        elseif d:IsA("BodyVelocity") or d:IsA("BodyPosition") or d:IsA("BodyGyro") then 
-            pcall(function() d:Destroy() end)
-        elseif d:IsA("Motor6D") then 
-            pcall(function() d.Enabled = true end) 
+-- ============================================================
+-- IMPORTIERTES ANTI-RAGDOLL SYSTEM (Prime Duels)
+-- ============================================================
+local ragConns = {}
+local lastVelAR = Vector3.new()
+
+local function ragClean(char)
+    if not char then char = LocalPlayer.Character end
+    if not char then return end
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") or v:IsA("NoCollisionConstraint") then
+            pcall(function() v:Destroy() end)
+        elseif v:IsA("Motor6D") then
+            v.Enabled = true
+        end
+    end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local anim = hum:FindFirstChildOfClass("Animator")
+        if anim then
+            for _, t in pairs(anim:GetPlayingAnimationTracks()) do
+                local n = (t.Animation and t.Animation.Name or ""):lower()
+                if n:find("rag") or n:find("fall") or n:find("hurt") then t:Stop(0) end
+            end
         end
     end
 end
 
-local function shouldBlock(h)
-    local s = h:GetState()
-    return s == Enum.HumanoidStateType.Physics or s == Enum.HumanoidStateType.Ragdoll or s == Enum.HumanoidStateType.FallingDown
+local function startAntiRagdoll()
+    for _, c in pairs(ragConns) do pcall(function() c:Disconnect() end) end
+    ragConns = {}
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+    
+    table.insert(ragConns, hum.StateChanged:Connect(function(_, new)
+        if not Sys.AR then return end
+        if new == Enum.HumanoidStateType.Ragdoll
+            or new == Enum.HumanoidStateType.FallingDown
+            or new == Enum.HumanoidStateType.Physics then
+            
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Running) end)
+            workspace.CurrentCamera.CameraSubject = hum
+            pcall(function()
+                local pm = LocalPlayer.PlayerScripts:FindFirstChild("PlayerModule")
+                if pm then require(pm:FindFirstChild("ControlModule")):Enable() end
+            end)
+            ragClean(char)
+        end
+    end))
+    
+    table.insert(ragConns, RunService.Heartbeat:Connect(function()
+        if not Sys.AR then return end
+        -- FIX: Ignoriert Velocity, wenn das TP Panel hochzieht
+        if getgenv().SMKT_DISABLE_VELOCITY then return end 
+
+        local c = LocalPlayer.Character; if not c then return end
+        local hrp = c:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+        local vel = hrp.AssemblyLinearVelocity
+        if (vel - lastVelAR).Magnitude > 40 and vel.Magnitude > 25 then
+            hrp.AssemblyLinearVelocity = vel.Unit * 15
+        end
+        lastVelAR = vel
+        ragClean(c)
+    end))
+    
+    for _, c in pairs(ragConns) do Track(c) end
 end
 
-Track(RunService.Stepped:Connect(function()
-    if not Sys.AR then return end
-    local c = LocalPlayer.Character
-    local h = c and c:FindFirstChild("Humanoid")
-    if h and shouldBlock(h) then
-        pcall(function() h:ChangeState(Enum.HumanoidStateType.Running) end)
-        cleanChar()
+local function stopAntiRagdoll()
+    for _, c in pairs(ragConns) do pcall(function() c:Disconnect() end) end
+    ragConns = {}
+end
+
+local function ToggleAR(state)
+    Sys.AR = state
+    if state then
+        startAntiRagdoll()
+    else
+        stopAntiRagdoll()
+    end
+    Save()
+end
+
+Track(LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if Sys.AR then
+        stopAntiRagdoll()
+        startAntiRagdoll()
     end
 end))
+-- ============================================================
 
 local isJmp, lastVel = false, Vector3.zero
 Track(RunService.Heartbeat:Connect(function()
     if not Sys.AK then return end
+    -- FIX: Ignoriert Velocity Limit, wenn das TP Panel aktiv ist
+    if getgenv().SMKT_DISABLE_VELOCITY then return end 
+
     local c = LocalPlayer.Character
     local hrp = c and c:FindFirstChild("HumanoidRootPart")
     local h = c and c:FindFirstChild("Humanoid")
@@ -340,16 +407,16 @@ local function CreateToggle(name, yPos, stateVar, cb)
         TweenService:Create(l, TweenInfo.new(0.2), {TextColor3 = txtc}):Play()
         
         cb(st)
-        Save()
     end)
 end
 
-CreateToggle("Anti Ragdoll", 60, "AR", function(s) end)
-CreateToggle("Anti Knockback", 106, "AK", function(s) end)
-CreateToggle("Infinity Jump", 152, "IJ", function(s) end)
+CreateToggle("Anti Ragdoll", 60, "AR", ToggleAR)
+CreateToggle("Anti Knockback", 106, "AK", function(s) Save() end)
+CreateToggle("Infinity Jump", 152, "IJ", function(s) Save() end)
 CreateToggle("XRay & Optimizer", 198, "XR", function(s) ToggleXRay(s) end)
 CreateToggle("Anti Effects", 244, "AE", function(s) ToggleAE(s) end)
 
+if Sys.AR then ToggleAR(true) end
 if Sys.XR then ToggleXRay(true) end
 if Sys.AE then ToggleAE(true) end
 
