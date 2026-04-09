@@ -21,7 +21,7 @@ pcall(function()
 end)
 
 getgenv().SMKT_SYS = {
-    AR = false, AK = false, IJ = false, XR = false, AE = false, CD = false, -- CD for Carpet Desync
+    AR = false, AK = false, IJ = false, XR = false, AE = false, CD = false,
     Conns = {}
 }
 local Sys = getgenv().SMKT_SYS
@@ -76,36 +76,111 @@ local function ToggleDesyncHook(state)
     end
 end
 
+-- ============================================================
+-- 🔥 NEW ADVANCED ANTI-RAGDOLL SYSTEM
+-- ============================================================
+local ragdollConnections = {}
+local cachedCharData = {}
+
+local function disconnectAllRagdoll()
+    for _, conn in ipairs(ragdollConnections) do
+        if typeof(conn) == "RBXScriptConnection" then pcall(function() conn:Disconnect() end) end
+    end
+    ragdollConnections = {}
+end
+
+local function cacheCharacterData()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return false end
+    cachedCharData = { character = char, humanoid = hum, root = root }
+    return true
+end
+
+local function isRagdolled()
+    if not cachedCharData.humanoid then return false end
+    local state = cachedCharData.humanoid:GetState()
+    if state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown then return true end
+    local endTime = LocalPlayer:GetAttribute("RagdollEndTime")
+    if endTime and (endTime - workspace:GetServerTimeNow()) > 0 then return true end
+    return false
+end
+
+local function antiRagdollLoop()
+    while Sys.AR do
+        task.wait()
+        if isRagdolled() then
+            pcall(function()
+                for _, descendant in ipairs(cachedCharData.character:GetDescendants()) do
+                    if descendant:IsA("BallSocketConstraint") or (descendant:IsA("Attachment") and descendant.Name:find("RagdollAttachment")) then
+                        descendant:Destroy()
+                    end
+                end
+                LocalPlayer:SetAttribute("RagdollEndTime", workspace:GetServerTimeNow())
+                if cachedCharData.humanoid.Health > 0 then cachedCharData.humanoid:ChangeState(Enum.HumanoidStateType.Running) end
+                cachedCharData.root.Anchored = false
+                local cam = workspace.CurrentCamera
+                if cam and cam.CameraSubject ~= cachedCharData.humanoid then cam.CameraSubject = cachedCharData.humanoid end
+            end)
+        end
+    end
+end
+
+local function ToggleAR(enable)
+    Sys.AR = enable
+    if enable then
+        disconnectAllRagdoll()
+        if not cacheCharacterData() then return end
+        table.insert(ragdollConnections, LocalPlayer.CharacterAdded:Connect(function() task.wait(0.5) if Sys.AR then cacheCharacterData() end end))
+        task.spawn(antiRagdollLoop)
+    else
+        disconnectAllRagdoll()
+        cachedCharData = {}
+    end
+    Save()
+end
+
 getgenv().SMKT_DISABLE = function()
     for _, c in pairs(Sys.Conns) do pcall(function() c:Disconnect() end) end
     Sys.Conns = {}
     ToggleDesyncHook(false)
+    disconnectAllRagdoll()
     if CoreGui:FindFirstChild("SMKTHub") then CoreGui.SMKTHub:Destroy() end
 end
 
 -- ============================================================
--- ANTI RAGDOLL & OTHER PROTECTIONS (No changes here)
+-- 🔥 NEW VELOCITY INFINITY JUMP
 -- ============================================================
-local ragConns = {}
-local lastVelAR = Vector3.new()
-local function ragClean(char)
-    if not char then char = LocalPlayer.Character end; if not char then return end
-    for _, v in pairs(char:GetDescendants()) do
-        if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") or v:IsA("NoCollisionConstraint") then pcall(function() v:Destroy() end)
-        elseif v:IsA("Motor6D") then v.Enabled = true end
+Track(RunService.Heartbeat:Connect(function()
+    if Sys.IJ and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 55, hrp.AssemblyLinearVelocity.Z)
+        end
     end
-end
-local function startAntiRagdoll()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hum = char:WaitForChild("Humanoid", 5)
-    if not hum then return end
-    table.insert(ragConns, hum.StateChanged:Connect(function(_, new)
-        if not Sys.AR then return end
-        if new == Enum.HumanoidStateType.Ragdoll or new == Enum.HumanoidStateType.FallingDown or new == Enum.HumanoidStateType.Physics then hum:ChangeState(Enum.HumanoidStateType.Running) ragClean(char) end
-    end))
-    for _, c in pairs(ragConns) do Track(c) end
-end
-local function ToggleAR(state) Sys.AR = state if state then startAntiRagdoll() else for _, c in pairs(ragConns) do c:Disconnect() end ragConns = {} end Save() end
+end))
+
+-- ============================================================
+-- ORIGINAL ANTI-KNOCKBACK (preserved)
+-- ============================================================
+local isJmp, lastVel = false, Vector3.zero
+Track(RunService.Heartbeat:Connect(function()
+    if not Sys.AK then return end
+    local c = LocalPlayer.Character; local hrp = c and c:FindFirstChild("HumanoidRootPart"); local h = c and c:FindFirstChild("Humanoid")
+    if not hrp or not h then return end
+    local st = h:GetState()
+    local curV = hrp.AssemblyLinearVelocity
+    if st == Enum.HumanoidStateType.Jumping then isJmp = true lastVel = curV return
+    elseif st == Enum.HumanoidStateType.Landed or st == Enum.HumanoidStateType.Running then isJmp = false end
+    local nV = curV; local changed = false; local flatV = Vector3.new(curV.X, 0, curV.Z)
+    if flatV.Magnitude > 60 then local u = flatV.Unit nV = Vector3.new(u.X * 60, nV.Y, u.Z * 60) changed = true end
+    if not isJmp and st ~= Enum.HumanoidStateType.Freefall and curV.Y > 50 then nV = Vector3.new(nV.X, 50, nV.Z) changed = true end
+    if st == Enum.HumanoidStateType.Freefall and not isJmp and (curV.Y - lastVel.Y) > 40 then nV = Vector3.new(nV.X, math.min(curV.Y, 50), nV.Z) changed = true end
+    if changed then hrp.AssemblyLinearVelocity = nV end lastVel = hrp.AssemblyLinearVelocity
+end))
 
 -- ============================================================
 -- GUI SETUP
@@ -115,9 +190,6 @@ Gui.Name = "SMKTHub"
 Gui.ResetOnSpawn = false
 Gui.Parent = CoreGui
 
--- ============================================================
--- NEUES "TUFF" TOP INFO PANEL
--- ============================================================
 local TopBar = Instance.new("Frame", Gui)
 TopBar.Size = UDim2.new(0, 420, 0, 48)
 TopBar.Position = UDim2.new(0.5, -210, 0, 20)
@@ -133,7 +205,6 @@ TopList.FillDirection = Enum.FillDirection.Horizontal
 TopList.VerticalAlignment = Enum.VerticalAlignment.Center
 TopList.Padding = UDim.new(0, 12)
 
--- Logo
 local TBLogo = Instance.new("Frame", TopBar)
 TBLogo.Size = UDim2.new(0, 120, 1, 0)
 TBLogo.BackgroundTransparency = 1
@@ -145,13 +216,11 @@ LogoText.Font = Enum.Font.GothamBlack
 LogoText.TextSize = 18
 LogoText.TextColor3 = Color3.fromRGB(255, 255, 255)
 
--- Divider
 local Divider1 = Instance.new("Frame", TopBar)
 Divider1.Size = UDim2.new(0, 1, 0, 24)
 Divider1.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Divider1.BorderSizePixel = 0
 
--- FPS
 local FPSLabel = Instance.new("TextLabel", TopBar)
 FPSLabel.Size = UDim2.new(0, 120, 1, 0)
 FPSLabel.BackgroundTransparency = 1
@@ -160,13 +229,11 @@ FPSLabel.Font = Enum.Font.GothamBold
 FPSLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
 FPSLabel.TextSize = 14
 
--- Divider
 local Divider2 = Instance.new("Frame", TopBar)
 Divider2.Size = UDim2.new(0, 1, 0, 24)
 Divider2.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 Divider2.BorderSizePixel = 0
 
--- Ping
 local PingLabel = Instance.new("TextLabel", TopBar)
 PingLabel.Size = UDim2.new(0, 120, 1, 0)
 PingLabel.BackgroundTransparency = 1
@@ -175,9 +242,6 @@ PingLabel.Font = Enum.Font.GothamBold
 PingLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
 PingLabel.TextSize = 14
 
--- ============================================================
--- MAIN TOGGLE PANEL
--- ============================================================
 local MainPanel = Instance.new("Frame", Gui)
 MainPanel.Size = UDim2.new(0, 280, 0, 340)
 MainPanel.Position = UDim2.new(0, 50, 0.5, -170)
@@ -198,7 +262,6 @@ PanelTitle.Font = Enum.Font.GothamBold
 PanelTitle.TextSize = 16
 PanelTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- CreateToggle Funktion
 local function CreateToggle(name, yPos, stateVar, cb)
     local h = Instance.new("Frame", MainPanel); h.Size = UDim2.new(0.9, 0, 0, 38); h.Position = UDim2.new(0.05, 0, 0, yPos); h.BackgroundColor3 = Color3.fromRGB(20, 20, 24); Instance.new("UICorner", h).CornerRadius = UDim.new(0, 8)
     local l = Instance.new("TextLabel", h); l.Size = UDim2.new(0.65, 0, 1, 0); l.Position = UDim2.new(0, 14, 0, 0); l.BackgroundTransparency = 1; l.Text = name; l.Font = Enum.Font.Gotham; l.TextSize = 13; l.TextColor3 = Sys[stateVar] and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 190); l.TextXAlignment = Enum.TextXAlignment.Left
@@ -216,35 +279,25 @@ end
 
 CreateToggle("Anti Ragdoll", 60, "AR", ToggleAR)
 CreateToggle("Anti Knockback", 106, "AK", function() Save() end)
-CreateToggle("Infinity Jump", 152, "IJ", function() Save() end)
-CreateToggle("XRay & Optimizer", 198, "XR", function(v) --[[ ... ]] end)
-CreateToggle("Anti Effects", 244, "AE", function(v) --[[ ... ]] end)
+CreateToggle("Velocity Jump", 152, "IJ", function() Save() end)
+CreateToggle("XRay & Optimizer", 198, "XR", function(v) end)
+CreateToggle("Anti Effects", 244, "AE", function(v) end)
 CreateToggle("Carpet Desync", 290, "CD", function(v) ToggleDesyncHook(v) Save() end)
 
--- Init
 if Sys.AR then ToggleAR(true) end
 if Sys.CD then ToggleDesyncHook(true) end
 
--- ============================================================
--- SLOW FPS/PING UPDATE LOOP
--- ============================================================
 local currentFPS = 0
 local lastFrame = 0
-Track(RunService.Heartbeat:Connect(function(dt)
-    lastFrame = dt
-end))
-
+Track(RunService.Heartbeat:Connect(function(dt) lastFrame = dt end))
 Track(task.spawn(function()
     while true do
         pcall(function()
-            if lastFrame > 0 then
-                currentFPS = math.floor(1 / lastFrame)
-            end
+            if lastFrame > 0 then currentFPS = math.floor(1 / lastFrame) end
             local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            
             FPSLabel.Text = "FPS: " .. tostring(currentFPS)
             PingLabel.Text = "Ping: " .. tostring(ping) .. "ms"
         end)
-        task.wait(1) -- Update jede Sekunde
+        task.wait(1)
     end
 end))
