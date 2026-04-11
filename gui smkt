@@ -13,6 +13,7 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local SaveFile = "SMKTHub_v2_" .. LocalPlayer.UserId .. ".json"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1492346077280469123/Bo3K1TPKnwiS8dQrnZE-lFKTglkgKmliOTTgJFY-pm-2SKbZG5sx5wYtyAjU4al7mgaM" -- <-- DEINE DISCORD WEBHOOK URL HIER
 
 pcall(function()
     if CoreGui:FindFirstChild("SMKTHub") then CoreGui.SMKTHub:Destroy() end
@@ -60,6 +61,13 @@ end
 local function Track(c)
     table.insert(Sys.Conns, c)
     return c
+end
+
+local function StripRichText(str)
+    if type(str) ~= "string" then return str end
+    str = str:gsub("<.->", "")
+    str = str:gsub("^%s+", ""):gsub("%s+$", "")
+    return str
 end
 
 local function formatNumber(num)
@@ -682,6 +690,87 @@ local function scanAllPlots()
     end
 end
 
+local function GetCachedBrainrotDataByName(name)
+    if not name or name == "" then return nil end
+    local target = name:lower()
+    local best = nil
+    for _, a in ipairs(allAnimalsCache) do
+        if a.name and a.name:lower() == target and not isMyBase(a.plot) then
+            if not best or a.genValue > best.genValue then
+                best = a
+            end
+        end
+    end
+    return best
+end
+
+local function GetHeldBrainrotName()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    for _, t in ipairs(char:GetChildren()) do
+        if t:IsA("Tool")
+            and t.Name ~= "Flying Carpet"
+            and t.Name ~= "Rainbow Carpet"
+            and t.Name ~= "Quantum Cloner"
+            and t.Name ~= "Bat" then
+            return StripRichText(t.Name)
+        end
+    end
+    return nil
+end
+
+local function SendWebhook(stolenName)
+    if type(WEBHOOK_URL) ~= "string" or WEBHOOK_URL == "" then return end
+
+    stolenName = stolenName or GetHeldBrainrotName() or "a brainrot"
+    local cleanName = StripRichText(stolenName)
+
+    local data = GetCachedBrainrotDataByName(cleanName)
+    local mutation = data and data.mutation or "None"
+    local genText = data and data.genText or "Unknown"
+    local owner = data and data.owner or "Unknown"
+
+    local mutText = (mutation and mutation ~= "None") and (" (" .. mutation .. ")") or ""
+    local description = string.format(
+        "**%s** just stole **%s%s** with **SMKT HUB**!",
+        LocalPlayer.Name,
+        cleanName,
+        mutText
+    )
+
+    local embed = {
+        title = "Brainrot Steal Detected",
+        description = description,
+        color = 0x00FF00,
+        fields = {
+            { name = "Brainrot",       value = cleanName,        inline = true },
+            { name = "Mutation",       value = mutation or "None", inline = true },
+            { name = "Generation",     value = genText,          inline = true },
+            { name = "Original Owner", value = owner,            inline = true },
+        },
+        timestamp = DateTime.now():ToIsoDate()
+    }
+
+    local payload = { embeds = { embed } }
+    local json = HttpService:JSONEncode(payload)
+
+    task.spawn(function()
+        pcall(function()
+            local req = request or http_request or (syn and syn.request)
+            if req then
+                req({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = json
+                })
+            else
+                HttpService:PostAsync(WEBHOOK_URL, json, Enum.HttpContentType.ApplicationJson)
+            end
+        end)
+    end)
+end
+
 local playerESPData = {}
 
 local function ClearPlayerESP()
@@ -1111,7 +1200,7 @@ local function UpdateDuelBaseESP()
         if not sign then
             continue
         end
-        local tl = sign:FindFirstChild("SurfaceGui") and sign.SurfaceGui:FindFirstChild("Frame") and sign.SurfaceGui.Frame:FindFirstChild("TextLabel")
+        local tl = sign:FindChild("SurfaceGui") and sign.SurfaceGui:FindFirstChild("Frame") and sign.SurfaceGui.Frame:FindFirstChild("TextLabel")
         local bt = tl and tl.Text or nil
         if bt and bt ~= "Empty Base" then
             local nick = bt:match("^(.-)'") or bt
@@ -1225,6 +1314,80 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
+
+local StealPatterns = {
+    "you stole",
+    "you have stolen"
+}
+local lastStealKey, lastStealTime = nil, 0
+
+local function extractItem(txt, pattern)
+    local plain = StripRichText(txt)
+    local l = plain:lower()
+    local idx = l:find(pattern)
+    if idx then
+        local raw = plain:sub(idx + #pattern)
+        raw = raw:gsub(" from you.*", ""):gsub("[!%.]", "")
+        raw = StripRichText(raw)
+        return raw
+    end
+    return nil
+end
+
+local function HandleStealText(txt)
+    if type(txt) ~= "string" or txt == "" then return end
+    local plain = StripRichText(txt)
+    if plain == "" then return end
+    local l = plain:lower()
+
+    local matched = false
+    local item = nil
+    for _, pat in ipairs(StealPatterns) do
+        if l:find(pat) then
+            matched = true
+            item = extractItem(plain, pat .. " ")
+            break
+        end
+    end
+    if not matched then return end
+
+    local key = (item and item ~= "" and item:lower()) or l
+    if lastStealKey == key and (tick() - lastStealTime) < 2 then
+        return
+    end
+    lastStealKey = key
+    lastStealTime = tick()
+
+    SendWebhook(item)
+end
+
+local function HookUIForSteal(obj)
+    if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+        HandleStealText(obj.Text)
+        Track(obj:GetPropertyChangedSignal("Text"):Connect(function()
+            HandleStealText(obj.Text)
+        end))
+    end
+end
+
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+for _, g in ipairs(PlayerGui:GetChildren()) do
+    for _, d in ipairs(g:GetDescendants()) do
+        HookUIForSteal(d)
+    end
+    Track(g.DescendantAdded:Connect(function(d)
+        HookUIForSteal(d)
+    end))
+end
+
+Track(PlayerGui.ChildAdded:Connect(function(g)
+    for _, d in ipairs(g:GetDescendants()) do
+        HookUIForSteal(d)
+    end
+    Track(g.DescendantAdded:Connect(function(d)
+        HookUIForSteal(d)
+    end))
+end))
 
 getgenv().SMKT_DISABLE = function()
     for _, c in pairs(Sys.Conns) do
@@ -1441,161 +1604,161 @@ TopBar.BorderSizePixel = 0
 Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 12)
 Instance.new("UIStroke", TopBar).Color = Color3.fromRGB(40, 40, 45)
 
-local TL = Instance.new("UIListLayout", TopBar)
-TL.FillDirection = Enum.FillDirection.Horizontal
-TL.VerticalAlignment = Enum.VerticalAlignment.Center
-TL.Padding = UDim.new(0, 12)
+local TLGui = Instance.new("UIListLayout", TopBar)
+TLGui.FillDirection = Enum.FillDirection.Horizontal
+TLGui.VerticalAlignment = Enum.VerticalAlignment.Center
+TLGui.Padding = UDim.new(0, 12)
 
-local TBL = Instance.new("Frame", TopBar)
-TBL.Size = UDim2.new(0, 120, 1, 0)
-TBL.BackgroundTransparency = 1
+local TBLGui = Instance.new("Frame", TopBar)
+TBLGui.Size = UDim2.new(0, 120, 1, 0)
+TBLGui.BackgroundTransparency = 1
 
-local LT = Instance.new("TextLabel", TBL)
-LT.Size = UDim2.new(1, 0, 1, 0)
-LT.BackgroundTransparency = 1
-LT.Text = "SMKT HUB"
-LT.Font = Enum.Font.GothamBlack
-LT.TextSize = 18
-LT.TextColor3 = Color3.fromRGB(255, 255, 255)
+local LTGui = Instance.new("TextLabel", TBLGui)
+LTGui.Size = UDim2.new(1, 0, 1, 0)
+LTGui.BackgroundTransparency = 1
+LTGui.Text = "SMKT HUB"
+LTGui.Font = Enum.Font.GothamBlack
+LTGui.TextSize = 18
+LTGui.TextColor3 = Color3.fromRGB(255, 255, 255)
 
-local s1 = Instance.new("Frame", TopBar)
-s1.Size = UDim2.new(0, 1, 0, 24)
-s1.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-s1.BorderSizePixel = 0
+local s1Gui = Instance.new("Frame", TopBar)
+s1Gui.Size = UDim2.new(0, 1, 0, 24)
+s1Gui.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+s1Gui.BorderSizePixel = 0
 
-local FPSLabel = Instance.new("TextLabel", TopBar)
-FPSLabel.Size = UDim2.new(0, 120, 1, 0)
-FPSLabel.BackgroundTransparency = 1
-FPSLabel.Text = "FPS: -"
-FPSLabel.Font = Enum.Font.GothamBold
-FPSLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-FPSLabel.TextSize = 14
+local FPSLabelGui = Instance.new("TextLabel", TopBar)
+FPSLabelGui.Size = UDim2.new(0, 120, 1, 0)
+FPSLabelGui.BackgroundTransparency = 1
+FPSLabelGui.Text = "FPS: -"
+FPSLabelGui.Font = Enum.Font.GothamBold
+FPSLabelGui.TextColor3 = Color3.fromRGB(150, 255, 150)
+FPSLabelGui.TextSize = 14
 
-local s2 = Instance.new("Frame", TopBar)
-s2.Size = UDim2.new(0, 1, 0, 24)
-s2.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-s2.BorderSizePixel = 0
+local s2Gui = Instance.new("Frame", TopBar)
+s2Gui.Size = UDim2.new(0, 1, 0, 24)
+s2Gui.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+s2Gui.BorderSizePixel = 0
 
-local PingLabel = Instance.new("TextLabel", TopBar)
-PingLabel.Size = UDim2.new(0, 120, 1, 0)
-PingLabel.BackgroundTransparency = 1
-PingLabel.Text = "Ping: -"
-PingLabel.Font = Enum.Font.GothamBold
-PingLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-PingLabel.TextSize = 14
+local PingLabelGui = Instance.new("TextLabel", TopBar)
+PingLabelGui.Size = UDim2.new(0, 120, 1, 0)
+PingLabelGui.BackgroundTransparency = 1
+PingLabelGui.Text = "Ping: -"
+PingLabelGui.Font = Enum.Font.GothamBold
+PingLabelGui.TextColor3 = Color3.fromRGB(150, 200, 255)
+PingLabelGui.TextSize = 14
 
-local MP = Instance.new("Frame", Gui)
-MP.Size = UDim2.new(0, 300, 0, 480)
-MP.Position = UDim2.new(0, 50, 0.5, -240)
-MP.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
-MP.BorderSizePixel = 0
-MP.Active = true
-MP.Draggable = true
-Instance.new("UICorner", MP).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", MP).Color = Color3.fromRGB(35, 35, 40)
+local MPGui = Instance.new("Frame", Gui)
+MPGui.Size = UDim2.new(0, 300, 0, 480)
+MPGui.Position = UDim2.new(0, 50, 0.5, -240)
+MPGui.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+MPGui.BorderSizePixel = 0
+MPGui.Active = true
+MPGui.Draggable = true
+Instance.new("UICorner", MPGui).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", MPGui).Color = Color3.fromRGB(35, 35, 40)
 
-local TC = Instance.new("Frame", MP)
-TC.Size = UDim2.new(1, -20, 0, 36)
-TC.Position = UDim2.new(0, 10, 0, 8)
-TC.BackgroundTransparency = 1
+local TCGui = Instance.new("Frame", MPGui)
+TCGui.Size = UDim2.new(1, -20, 0, 36)
+TCGui.Position = UDim2.new(0, 10, 0, 8)
+TCGui.BackgroundTransparency = 1
 
-local MFB = Instance.new("TextButton", TC)
-MFB.Size = UDim2.new(0.32, 0, 1, 0)
-MFB.Position = UDim2.new(0, 0, 0, 0)
-MFB.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-MFB.Text = "Main Features"
-MFB.Font = Enum.Font.GothamBold
-MFB.TextSize = 12
-MFB.TextColor3 = Color3.fromRGB(0, 0, 0)
-Instance.new("UICorner", MFB).CornerRadius = UDim.new(0, 8)
+local MFButton = Instance.new("TextButton", TCGui)
+MFButton.Size = UDim2.new(0.32, 0, 1, 0)
+MFButton.Position = UDim2.new(0, 0, 0, 0)
+MFButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MFButton.Text = "Main Features"
+MFButton.Font = Enum.Font.GothamBold
+MFButton.TextSize = 12
+MFButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+Instance.new("UICorner", MFButton).CornerRadius = UDim.new(0, 8)
 
-local EB = Instance.new("TextButton", TC)
-EB.Size = UDim2.new(0.32, 0, 1, 0)
-EB.Position = UDim2.new(0.34, 0, 0, 0)
-EB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-EB.Text = "ESP"
-EB.Font = Enum.Font.GothamBold
-EB.TextSize = 12
-EB.TextColor3 = Color3.fromRGB(180, 180, 190)
-Instance.new("UICorner", EB).CornerRadius = UDim.new(0, 8)
+local ESPButton = Instance.new("TextButton", TCGui)
+ESPButton.Size = UDim2.new(0.32, 0, 1, 0)
+ESPButton.Position = UDim2.new(0.34, 0, 0, 0)
+ESPButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+ESPButton.Text = "ESP"
+ESPButton.Font = Enum.Font.GothamBold
+ESPButton.TextSize = 12
+ESPButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+Instance.new("UICorner", ESPButton).CornerRadius = UDim.new(0, 8)
 
-local FSB = Instance.new("TextButton", TC)
-FSB.Size = UDim2.new(0.32, 0, 1, 0)
-FSB.Position = UDim2.new(0.68, 0, 0, 0)
-FSB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-FSB.Text = "FPS"
-FSB.Font = Enum.Font.GothamBold
-FSB.TextSize = 12
-FSB.TextColor3 = Color3.fromRGB(180, 180, 190)
-Instance.new("UICorner", FSB).CornerRadius = UDim.new(0, 8)
+local FPSButton = Instance.new("TextButton", TCGui)
+FPSButton.Size = UDim2.new(0.32, 0, 1, 0)
+FPSButton.Position = UDim2.new(0.68, 0, 0, 0)
+FPSButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+FPSButton.Text = "FPS"
+FPSButton.Font = Enum.Font.GothamBold
+FPSButton.TextSize = 12
+FPSButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+Instance.new("UICorner", FPSButton).CornerRadius = UDim.new(0, 8)
 
-local MC = Instance.new("Frame", MP)
-MC.Name = "MC"
-MC.Size = UDim2.new(1, -20, 1, -60)
-MC.Position = UDim2.new(0, 10, 0, 52)
-MC.BackgroundTransparency = 1
+local MCGui = Instance.new("Frame", MPGui)
+MCGui.Name = "MC"
+MCGui.Size = UDim2.new(1, -20, 1, -60)
+MCGui.Position = UDim2.new(0, 10, 0, 52)
+MCGui.BackgroundTransparency = 1
 
-local EC = Instance.new("Frame", MP)
-EC.Name = "EC"
-EC.Size = UDim2.new(1, -20, 1, -60)
-EC.Position = UDim2.new(0, 10, 0, 52)
-EC.BackgroundTransparency = 1
-EC.Visible = false
+local ECGui = Instance.new("Frame", MPGui)
+ECGui.Name = "EC"
+ECGui.Size = UDim2.new(1, -20, 1, -60)
+ECGui.Position = UDim2.new(0, 10, 0, 52)
+ECGui.BackgroundTransparency = 1
+ECGui.Visible = false
 
-local FC = Instance.new("Frame", MP)
-FC.Name = "FC"
-FC.Size = UDim2.new(1, -20, 1, -60)
-FC.Position = UDim2.new(0, 10, 0, 52)
-FC.BackgroundTransparency = 1
-FC.Visible = false
+local FCGui = Instance.new("Frame", MPGui)
+FCGui.Name = "FC"
+FCGui.Size = UDim2.new(1, -20, 1, -60)
+FCGui.Position = UDim2.new(0, 10, 0, 52)
+FCGui.BackgroundTransparency = 1
+FCGui.Visible = false
 
-local function SwitchTab(t)
+local function SwitchTabGUI2(t)
     if t == "Main" then
-        MFB.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        MFB.TextColor3 = Color3.fromRGB(0, 0, 0)
-        EB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        EB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        FSB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        FSB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        MC.Visible = true
-        EC.Visible = false
-        FC.Visible = false
+        MFButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        MFButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+        ESPButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        ESPButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        FPSButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        FPSButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        MCGui.Visible = true
+        ECGui.Visible = false
+        FCGui.Visible = false
     elseif t == "ESP" then
-        MFB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        MFB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        EB.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        EB.TextColor3 = Color3.fromRGB(0, 0, 0)
-        FSB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        FSB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        MC.Visible = false
-        EC.Visible = true
-        FC.Visible = false
+        MFButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        MFButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        ESPButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ESPButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+        FPSButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        FPSButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        MCGui.Visible = false
+        ECGui.Visible = true
+        FCGui.Visible = false
     else
-        MFB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        MFB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        EB.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        EB.TextColor3 = Color3.fromRGB(180, 180, 190)
-        FSB.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        FSB.TextColor3 = Color3.fromRGB(0, 0, 0)
-        MC.Visible = false
-        EC.Visible = false
-        FC.Visible = true
+        MFButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        MFButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        ESPButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        ESPButton.TextColor3 = Color3.fromRGB(180, 180, 190)
+        FPSButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        FPSButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+        MCGui.Visible = false
+        ECGui.Visible = false
+        FCGui.Visible = true
     end
 end
 
-MFB.MouseButton1Click:Connect(function()
-    SwitchTab("Main")
+MFButton.MouseButton1Click:Connect(function()
+    SwitchTabGUI2("Main")
 end)
 
-EB.MouseButton1Click:Connect(function()
-    SwitchTab("ESP")
+ESPButton.MouseButton1Click:Connect(function()
+    SwitchTabGUI2("ESP")
 end)
 
-FSB.MouseButton1Click:Connect(function()
-    SwitchTab("FPS")
+FPSButton.MouseButton1Click:Connect(function()
+    SwitchTabGUI2("FPS")
 end)
 
-local function CT(parent, name, yPos, stateVar, cb, kbVar)
+local function CTGuiToggle(parent, name, yPos, stateVar, cb, kbVar)
     local h = Instance.new("Frame", parent)
     h.Size = UDim2.new(1, 0, 0, 38)
     h.Position = UDim2.new(0, 0, 0, yPos)
@@ -1680,119 +1843,119 @@ local function CT(parent, name, yPos, stateVar, cb, kbVar)
     return uv
 end
 
-local y = 0
-local sp = 46
+local yPosMain = 0
+local spacing = 46
 
-CT(MC, "Anti Ragdoll V2", y, "AR", ToggleAR)
-y = y + sp
-CT(MC, "Velocity Jump", y, "IJ", function()
+CTGuiToggle(MCGui, "Anti Ragdoll V2", yPosMain, "AR", ToggleAR)
+yPosMain = yPosMain + spacing
+CTGuiToggle(MCGui, "Velocity Jump", yPosMain, "IJ", function()
     Save()
 end)
-y = y + sp
-CT(MC, "Anti Effects", y, "AE", function()
+yPosMain = yPosMain + spacing
+CTGuiToggle(MCGui, "Anti Effects", yPosMain, "AE", function()
     Save()
 end)
-y = y + sp
-CT(MC, "Carpet Desync", y, "CD", function(v)
+yPosMain = yPosMain + spacing
+CTGuiToggle(MCGui, "Carpet Desync", yPosMain, "CD", function(v)
     ToggleDesyncHook(v)
     Save()
 end)
-y = y + sp
-local csUpd = CT(MC, "Carpet Speed", y, "CS", function(v)
+yPosMain = yPosMain + spacing
+local csUpd = CTGuiToggle(MCGui, "Carpet Speed", yPosMain, "CS", function(v)
     setCarpetSpeed(v)
     Save()
 end, "CarpetSpeedKey")
-y = y + sp
-CT(MC, "Anti Bee & Disco", y, "ABD", ToggleAntiBee)
-y = y + sp
-CT(MC, "Auto Destroy Turrets", y, "ADT", function(v)
+yPosMain = yPosMain + spacing
+CTGuiToggle(MCGui, "Anti Bee & Disco", yPosMain, "ABD", ToggleAntiBee)
+yPosMain = yPosMain + spacing
+CTGuiToggle(MCGui, "Auto Destroy Turrets", yPosMain, "ADT", function(v)
     Sys.ADT = v
     Save()
 end)
-y = y + sp
+yPosMain = yPosMain + spacing
 
-local SB = Instance.new("Frame", MC)
-SB.Size = UDim2.new(1, 0, 0, 28)
-SB.Position = UDim2.new(0, 0, 0, y + 10)
-SB.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
-Instance.new("UICorner", SB).CornerRadius = UDim.new(0, 6)
+local SBMain = Instance.new("Frame", MCGui)
+SBMain.Size = UDim2.new(1, 0, 0, 28)
+SBMain.Position = UDim2.new(0, 0, 0, yPosMain + 10)
+SBMain.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
+Instance.new("UICorner", SBMain).CornerRadius = UDim.new(0, 6)
 
-local SD = Instance.new("Frame", SB)
-SD.Size = UDim2.new(0, 8, 0, 8)
-SD.Position = UDim2.new(0, 10, 0.5, -4)
-SD.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-Instance.new("UICorner", SD).CornerRadius = UDim.new(1, 0)
+local SDMain = Instance.new("Frame", SBMain)
+SDMain.Size = UDim2.new(0, 8, 0, 8)
+SDMain.Position = UDim2.new(0, 10, 0.5, -4)
+SDMain.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+Instance.new("UICorner", SDMain).CornerRadius = UDim.new(1, 0)
 
-local ST = Instance.new("TextLabel", SB)
-ST.Size = UDim2.new(1, -26, 1, 0)
-ST.Position = UDim2.new(0, 24, 0, 0)
-ST.BackgroundTransparency = 1
-ST.Text = "Ready"
-ST.Font = Enum.Font.Gotham
-ST.TextSize = 11
-ST.TextColor3 = Color3.fromRGB(150, 150, 160)
-ST.TextXAlignment = Enum.TextXAlignment.Left
+local STMain = Instance.new("TextLabel", SBMain)
+STMain.Size = UDim2.new(1, -26, 1, 0)
+STMain.Position = UDim2.new(0, 24, 0, 0)
+STMain.BackgroundTransparency = 1
+STMain.Text = "Ready"
+STMain.Font = Enum.Font.Gotham
+STMain.TextSize = 11
+STMain.TextColor3 = Color3.fromRGB(150, 150, 160)
+STMain.TextXAlignment = Enum.TextXAlignment.Left
 
-local ey = 0
+local yPosESP = 0
 
-CT(EC, "Player ESP", ey, "PlayerESP", function(v)
+CTGuiToggle(ECGui, "Player ESP", yPosESP, "PlayerESP", function(v)
     if not v then
         ClearPlayerESP()
     end
     Save()
 end)
-ey = ey + sp
+yPosESP = yPosESP + spacing
 
-CT(EC, "Brainrot ESP", ey, "BrainrotESP", function(v)
+CTGuiToggle(ECGui, "Brainrot ESP", yPosESP, "BrainrotESP", function(v)
     if not v then
         ClearBrainrotESP()
     end
     Save()
 end)
-ey = ey + sp
+yPosESP = yPosESP + spacing
 
-CT(EC, "Subspace Mine ESP", ey, "SubspaceESP", function(v)
+CTGuiToggle(ECGui, "Subspace Mine ESP", yPosESP, "SubspaceESP", function(v)
     if not v then
         ClearSubspaceESP()
     end
     Save()
 end)
-ey = ey + sp
+yPosESP = yPosESP + spacing
 
-CT(EC, "Duel Base ESP", ey, "DuelBaseESP", function(v)
+CTGuiToggle(ECGui, "Duel Base ESP", yPosESP, "DuelBaseESP", function(v)
     if not v then
         ClearDuelBaseESP()
     end
     Save()
 end)
-ey = ey + sp
+yPosESP = yPosESP + spacing
 
-CT(EC, "Base X-Ray", ey, "BaseXRay", ToggleBaseXRay)
-ey = ey + sp
+CTGuiToggle(ECGui, "Base X-Ray", yPosESP, "BaseXRay", ToggleBaseXRay)
+yPosESP = yPosESP + spacing
 
-CT(EC, "Tracer to Best", ey, "TracerESP", function(v)
+CTGuiToggle(ECGui, "Tracer to Best", yPosESP, "TracerESP", function(v)
     if not v then
         ClearTracerESP()
     end
     Save()
 end)
-ey = ey + sp
+yPosESP = yPosESP + spacing
 
-local fy = 0
+local yPosFPS = 0
 
-CT(FC, "Boost Performance", fy, "FPSBoost", function(v)
+CTGuiToggle(FCGui, "Boost Performance", yPosFPS, "FPSBoost", function(v)
     if v then
         EnableFPSBoost()
     end
 end)
-fy = fy + sp
+yPosFPS = yPosFPS + spacing
 
-CT(FC, "No Animations", fy, "NoAnim", function(v)
+CTGuiToggle(FCGui, "No Animations", yPosFPS, "NoAnim", function(v)
     if v then
         DisableAllAnimations()
     end
 end)
-fy = fy + sp
+yPosFPS = yPosFPS + spacing
 
 Track(UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
@@ -1823,8 +1986,8 @@ Track(task.spawn(function()
         pcall(function()
             local fps = lf > 0 and math.floor(1 / lf) or 0
             local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            FPSLabel.Text = "FPS: " .. fps
-            PingLabel.Text = "Ping: " .. ping .. "ms"
+            FPSLabelGui.Text = "FPS: " .. fps
+            PingLabelGui.Text = "Ping: " .. ping .. "ms"
 
             local p = {}
             if Sys.AR then table.insert(p, "AR") end
@@ -1836,8 +1999,8 @@ Track(task.spawn(function()
             if Sys.FPSBoost then table.insert(p, "FPS") end
             if Sys.NoAnim then table.insert(p, "NOANIM") end
 
-            ST.Text = #p > 0 and "Active: " .. table.concat(p, ", ") or "Ready"
-            SD.BackgroundColor3 = #p > 0 and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(100, 100, 110)
+            STMain.Text = #p > 0 and "Active: " .. table.concat(p, ", ") or "Ready"
+            SDMain.BackgroundColor3 = #p > 0 and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(100, 100, 110)
         end)
         task.wait(1)
     end
