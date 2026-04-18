@@ -13,7 +13,7 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local SaveFile = "SMKTHub_v2_" .. LocalPlayer.UserId .. ".json"
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1492346077280469123/Bo3K1TPKnwiS8dQrnZE-lFKTglkgKmliOTTgJFY-pm-2SKbZG5sx5wYtyAjU4al7mgaM" -- <-- DEINE DISCORD WEBHOOK URL HIER
+local WEBHOOK_URL = "" -- <-- DEINE DISCORD WEBHOOK URL HIER
 
 pcall(function()
     if CoreGui:FindFirstChild("SMKTHub") then CoreGui.SMKTHub:Destroy() end
