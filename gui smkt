@@ -13,6 +13,7 @@ local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local SaveFile = "SMKTHub_v2_" .. LocalPlayer.UserId .. ".json"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1492346077280469123/Bo3K1TPKnwiS8dQrnZE-lFKTglkgKmliOTTgJFY-pm-2SKbZG5sx5wYtyAjU4al7mgaM"
 
 pcall(function()
     if CoreGui:FindFirstChild("SMKTHub") then CoreGui.SMKTHub:Destroy() end
@@ -85,7 +86,9 @@ local function formatNumber(num)
         return string.format("%.2fM", num / 1e6)
     elseif num >= 1e3 then
         return string.format("%.2fK", num / 1e3)
-    else return tostring(math.floor(num)) end
+    else
+        return tostring(math.floor(num))
+    end
 end
 
 local function isMyBase(plotName)
@@ -93,6 +96,7 @@ local function isMyBase(plotName)
     if not plots then return false end
     local plot = plots:FindFirstChild(plotName)
     if not plot then return false end
+
     local channel = Synchronizer:Get(plot.Name)
     if channel then
         local owner = channel:Get("Owner")
@@ -104,6 +108,7 @@ local function isMyBase(plotName)
             end
         end
     end
+
     local sign = plot:FindFirstChild("PlotSign")
     if sign then
         local yb = sign:FindFirstChild("YourBase")
@@ -121,10 +126,14 @@ local function isInFusingMachine(plot, slot)
     if not channel then return false end
     local fd = channel:Get("FusingMachine")
     if fd then
-        if fd.Input1 == slotNum or fd.Input2 == slotNum or fd.Output == slotNum then return true end
+        if fd.Input1 == slotNum or fd.Input2 == slotNum or fd.Output == slotNum then
+            return true
+        end
         if type(fd.Inputs) == "table" then
             for _, v in pairs(fd.Inputs) do
-                if v == slotNum then return true end
+                if v == slotNum then
+                    return true
+                end
             end
         end
     end
@@ -174,7 +183,9 @@ local function ToggleDesyncHook(state)
         end)
     else
         if desyncHook then
-            pcall(function() desyncHook:Disconnect() end)
+            pcall(function()
+                desyncHook:Disconnect()
+            end)
             desyncHook = nil
         end
     end
@@ -198,7 +209,9 @@ local function setCarpetSpeed(enabled)
         local carpet = c:FindFirstChild("Flying Carpet") or c:FindFirstChild("Rainbow Carpet")
         if not carpet then
             local tb = LocalPlayer.Backpack:FindFirstChild("Flying Carpet") or LocalPlayer.Backpack:FindFirstChild("Rainbow Carpet")
-            if tb then hum:EquipTool(tb) end
+            if tb then
+                hum:EquipTool(tb)
+            end
         end
         if carpet or c:FindFirstChild("Flying Carpet") or c:FindFirstChild("Rainbow Carpet") then
             local md = hum.MoveDirection
@@ -564,32 +577,46 @@ local function triggerClosestUnlock(yLevel, maxY)
     local character = LocalPlayer.Character
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
+
     local playerY = yLevel or hrp.Position.Y
     local Y_THRESHOLD = 5
-    local bestPromptSameLevel, shortestDistSameLevel = nil, math.huge
-    local bestPromptFallback, shortestDistFallback = nil, math.huge
+
+    local bestPromptSameLevel = nil
+    local shortestDistSameLevel = math.huge
+
+    local bestPromptFallback = nil
+    local shortestDistFallback = math.huge
+
     local plots = Workspace:FindFirstChild("Plots")
     if not plots then return end
+
     for _, obj in ipairs(plots:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled then
             local part = obj.Parent
             if part and part:IsA("BasePart") then
-                if not (maxY and part.Position.Y > maxY) then
+                if maxY and part.Position.Y > maxY then
+                else
                     local distance = (hrp.Position - part.Position).Magnitude
                     local yDifference = math.abs(playerY - part.Position.Y)
+
                     if distance < shortestDistFallback then
                         shortestDistFallback = distance
                         bestPromptFallback = obj
                     end
-                    if yDifference <= Y_THRESHOLD and distance < shortestDistSameLevel then
-                        shortestDistSameLevel = distance
-                        bestPromptSameLevel = obj
+
+                    if yDifference <= Y_THRESHOLD then
+                        if distance < shortestDistSameLevel then
+                            shortestDistSameLevel = distance
+                            bestPromptSameLevel = obj
+                        end
                     end
                 end
             end
         end
     end
+
     local targetPrompt = bestPromptSameLevel or bestPromptFallback
+
     if targetPrompt then
         if fireproximityprompt then
             fireproximityprompt(targetPrompt)
@@ -639,9 +666,26 @@ end)
 
 local ESPFolder = Instance.new("Folder", CoreGui)
 ESPFolder.Name = "SMKT_ESP"
+
 local allAnimalsCache = {}
 local lastAnimalData = {}
 local ESP_BEST_UID = nil
+
+local WEBHOOK_MIN_GEN = 75000000
+
+local ALWAYS_SEND = {}
+for _, n in ipairs({
+    "Headless Horseman","Ketchuru and Musturu","Burguro And Fryuro","Tang Tang Keletang",
+    "Tictac Sahur","Tralaledon","Dragon Cannelloni","Los Tacoritas","Fragrama and Chocrama",
+    "La Secret Combinasion","Nuclearo Dinossauro","Los Primos","La Ginger Sekolah","Festive 67",
+    "Ketupat Kepat","Eviledon","Spooky and Pumpky","Cooki and Milki","Garama and Madundung",
+    "Reinito Sleighito","Orcaledon","Capitano Moby","Lavadorito Spinito","La Supreme Combinasion",
+    "Guest 666","Strawberry Elephant","Dragon Gingerini","Meowl","Skibidi Toilet",
+    "Foxini Lanternini","La Casa Boo","Cloverat Clapat","Jolly Jolly Sahur","Gingerat Gerat",
+    "Los Hotspotsitos","Hydra Dragon Cannelloni","Popcuru and Fizzuru"
+}) do
+    ALWAYS_SEND[n:lower()] = true
+end
 
 local MUT_COLORS = {
     Cursed = Color3.fromRGB(255, 50, 50),
@@ -655,6 +699,23 @@ local MUT_COLORS = {
     Radioactive = Color3.fromRGB(0, 255, 0),
     Divine = Color3.fromRGB(255, 255, 255)
 }
+
+local function getRequestFunc()
+    local r =
+        (syn and syn.request) or
+        (http and http.request) or
+        (fluxus and fluxus.request) or
+        (krnl and krnl.request) or
+        request or
+        http_request
+    return r
+end
+
+local function shouldSendWebhook(cleanName, data)
+    if ALWAYS_SEND[cleanName:lower()] then return true end
+    if data and data.genValue and data.genValue >= WEBHOOK_MIN_GEN then return true end
+    return false
+end
 
 local function getAnimalHash(al)
     if not al then return "" end
@@ -684,17 +745,7 @@ local function scanSinglePlot(plot)
         end
 
         local owner = ch:Get("Owner")
-        local ownerName = "Unknown"
-        if owner then
-            if typeof(owner) == "Instance" and owner:IsA("Player") then
-                ownerName = owner.Name
-            elseif type(owner) == "table" then
-                ownerName = owner.Name or "Unknown"
-            elseif type(owner) == "string" then
-                ownerName = owner
-            end
-        end
-        if ownerName == "Unknown" then return end
+        if not owner or not Players:FindFirstChild(owner.Name) then return end
         if not al then return end
 
         for slot, ad in pairs(al) do
@@ -713,7 +764,7 @@ local function scanSinglePlot(plot)
                     genValue = gv,
                     genText = formatNumber(gv),
                     mutation = mut,
-                    owner = ownerName,
+                    owner = owner.Name,
                     plot = plot.Name,
                     slot = tostring(slot),
                     uid = plot.Name .. "_" .. tostring(slot)
@@ -733,6 +784,91 @@ local function scanAllPlots()
     for _, p in ipairs(plots:GetChildren()) do
         scanSinglePlot(p)
     end
+end
+
+local function GetCachedBrainrotDataByName(name)
+    if not name or name == "" then return nil end
+    local target = name:lower()
+    local best = nil
+    for _, a in ipairs(allAnimalsCache) do
+        if a.name and a.name:lower() == target and not isMyBase(a.plot) then
+            if not best or a.genValue > best.genValue then
+                best = a
+            end
+        end
+    end
+    return best
+end
+
+local function GetHeldBrainrotName()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    for _, t in ipairs(char:GetChildren()) do
+        if t:IsA("Tool")
+            and t.Name ~= "Flying Carpet"
+            and t.Name ~= "Rainbow Carpet"
+            and t.Name ~= "Quantum Cloner"
+            and t.Name ~= "Bat" then
+            return StripRichText(t.Name)
+        end
+    end
+    return nil
+end
+
+local function SendWebhook(stolenName)
+    if type(WEBHOOK_URL) ~= "string" or WEBHOOK_URL == "" then return end
+
+    stolenName = stolenName or GetHeldBrainrotName() or "a brainrot"
+    local cleanFull = StripRichText(stolenName)
+    if cleanFull == "" then return end
+
+    local baseName = cleanFull:gsub("%s*%([^)]*%)", "")
+    baseName = StripRichText(baseName)
+    if baseName == "" then baseName = cleanFull end
+
+    local data = GetCachedBrainrotDataByName(baseName)
+    local mutation = data and data.mutation or "None"
+    local genText = data and data.genText or "Unknown"
+    local owner = data and data.owner or "Unknown"
+
+    if not shouldSendWebhook(baseName, data) then return end
+
+    local mutSuffix = (mutation ~= "None") and (" (" .. mutation .. ")") or ""
+    local description = string.format("**%s** stole **%s%s** with **SMKT HUB**!", LocalPlayer.Name, baseName, mutSuffix)
+
+    local embed = {
+        title = "Brainrot Steal Detected",
+        description = description,
+        color = 0x00FF00,
+        fields = {
+            { name = "Brainrot",       value = baseName, inline = true },
+            { name = "Mutation",       value = mutation, inline = true },
+            { name = "Generation",     value = genText,  inline = true },
+            { name = "Original Owner", value = owner,    inline = true },
+        },
+        timestamp = DateTime.now():ToIsoDate()
+    }
+
+    local payload = { embeds = { embed } }
+    local json = HttpService:JSONEncode(payload)
+
+    task.spawn(function()
+        local req = getRequestFunc()
+        if req then
+            pcall(function()
+                req({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = json
+                })
+            end)
+        else
+            pcall(function()
+                HttpService:PostAsync(WEBHOOK_URL, json, Enum.HttpContentType.ApplicationJson)
+            end)
+        end
+    end)
 end
 
 local playerESPData = {}
@@ -1190,8 +1326,6 @@ local function UpdateDuelBaseESP()
 end
 
 local xrayOrig = {}
-local xrayDescConn = nil
-
 local function isBaseWall(o)
     if not o:IsA("BasePart") then return false end
     local n = o.Name:lower()
@@ -1199,35 +1333,22 @@ local function isBaseWall(o)
     return n:find("base") or pn:find("base")
 end
 
-local function xrayPart(o)
-    if o:IsA("BasePart") and o.Anchored and isBaseWall(o) and not xrayOrig[o] then
-        xrayOrig[o] = o.LocalTransparencyModifier
-        o.LocalTransparencyModifier = 0.85
-    end
-end
-
 local function ToggleBaseXRay(e)
     Sys.BaseXRay = e
     if e then
         for _, o in ipairs(Workspace:GetDescendants()) do
-            xrayPart(o)
+            if o:IsA("BasePart") and o.Anchored and isBaseWall(o) then
+                xrayOrig[o] = o.LocalTransparencyModifier
+                o.LocalTransparencyModifier = 0.85
+            end
         end
-        if not xrayDescConn then
-            xrayDescConn = Workspace.DescendantAdded:Connect(function(o)
-                if Sys.BaseXRay then xrayPart(o) end
-            end)
-            Track(xrayDescConn)
-        end
-        LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
     else
-        if xrayDescConn then xrayDescConn:Disconnect() xrayDescConn = nil end
         for p, v in pairs(xrayOrig) do
             if p and p.Parent then
                 p.LocalTransparencyModifier = v
             end
         end
         xrayOrig = {}
-        LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Zoom
     end
     Save()
 end
@@ -1294,6 +1415,84 @@ task.spawn(function()
     end
 end)
 
+local StealPatterns = {
+    "you stole",
+    "you have stolen"
+}
+local lastStealKey, lastStealTime = nil, 0
+
+local function extractItem(txt, pattern)
+    local plain = StripRichText(txt)
+    local l = plain:lower()
+    local idx = l:find(pattern)
+    if idx then
+        local raw = plain:sub(idx + #pattern)
+        raw = raw:gsub(" from you.*", ""):gsub("[!%.]", "")
+        raw = StripRichText(raw)
+        return raw
+    end
+    return nil
+end
+
+local function HandleStealText(txt)
+    if type(txt) ~= "string" or txt == "" then return end
+    local plain = StripRichText(txt)
+    if plain == "" then return end
+    local l = plain:lower()
+
+    local matched = false
+    local item = nil
+    for _, pat in ipairs(StealPatterns) do
+        if l:find(pat) then
+            matched = true
+            item = extractItem(plain, pat .. " ")
+            break
+        end
+    end
+    if not matched then return end
+
+    local key = (item and item ~= "" and item:lower()) or l
+    if lastStealKey == key and (tick() - lastStealTime) < 2 then
+        return
+    end
+    lastStealKey = key
+    lastStealTime = tick()
+
+    task.spawn(function()
+        scanAllPlots()
+        task.wait(0.1)
+        SendWebhook(item)
+    end)
+end
+
+local function HookUIForSteal(obj)
+    if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+        HandleStealText(obj.Text)
+        Track(obj:GetPropertyChangedSignal("Text"):Connect(function()
+            HandleStealText(obj.Text)
+        end))
+    end
+end
+
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+for _, g in ipairs(PlayerGui:GetChildren()) do
+    for _, d in ipairs(g:GetDescendants()) do
+        HookUIForSteal(d)
+    end
+    Track(g.DescendantAdded:Connect(function(d)
+        HookUIForSteal(d)
+    end))
+end
+
+Track(PlayerGui.ChildAdded:Connect(function(g)
+    for _, d in ipairs(g:GetDescendants()) do
+        HookUIForSteal(d)
+    end
+    Track(g.DescendantAdded:Connect(function(d)
+        HookUIForSteal(d)
+    end))
+end))
+
 getgenv().SMKT_DISABLE = function()
     for _, c in pairs(Sys.Conns) do
         pcall(function()
@@ -1309,21 +1508,15 @@ getgenv().SMKT_DISABLE = function()
     ClearSubspaceESP()
     ClearDuelBaseESP()
     ClearTracerESP()
-    if xrayDescConn then xrayDescConn:Disconnect() xrayDescConn = nil end
-    for p, v in pairs(xrayOrig) do
-        if p and p.Parent then p.LocalTransparencyModifier = v end
-    end
-    xrayOrig = {}
     if ESPFolder then
         ESPFolder:Destroy()
     end
     if CoreGui:FindFirstChild("SMKTHub") then
         CoreGui.SMKTHub:Destroy()
     end
-    LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Zoom
 end
 
-Track(RunService.Heartbeat:Connect(function()
+Track(RunService.Heartbeat:Connect(function(dt)
     if getgenv().SMKT_DISABLE_VELOCITY then return end
     if Sys.IJ and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
         local c = LocalPlayer.Character
@@ -1343,19 +1536,18 @@ end))
 
 local carpetSpeedKeyCode = Enum.KeyCode[Sys.CarpetSpeedKey] or Enum.KeyCode.Q
 
-local fpsBoostConns = {}
-local fpsBoostOrig = {}
+local fpsBoostEnabled = false
+local noAnimationsEnabled = false
 
 local function EnableFPSBoost()
+    if fpsBoostEnabled then return end
+    fpsBoostEnabled = true
+
+    local a = RunService
     local b = Lighting
     local c = UserSettings():GetService("UserGameSettings")
 
     c.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
-    fpsBoostOrig.LevelOfDetail = workspace.LevelOfDetail
-    fpsBoostOrig.Technology = b.Technology
-    fpsBoostOrig.GlobalShadows = b.GlobalShadows
-    fpsBoostOrig.FogEnd = b.FogEnd
-
     workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
     b.Technology = Enum.Technology.Compatibility
     b.GlobalShadows = false
@@ -1376,8 +1568,7 @@ local function EnableFPSBoost()
         end
     end
 
-    table.insert(fpsBoostConns, b.ChildAdded:Connect(function(d)
-        if not Sys.FPSBoost then return end
+    b.ChildAdded:Connect(function(d)
         if d:IsA("PostEffect") then
             d.Enabled = false
         elseif d:IsA("Atmosphere") then
@@ -1387,7 +1578,7 @@ local function EnableFPSBoost()
         elseif d:IsA("Sky") then
             d.CelestialBodiesShown = false
         end
-    end))
+    end)
 
     local types = {
         "ParticleEmitter",
@@ -1425,12 +1616,11 @@ local function EnableFPSBoost()
         end
     end
 
-    table.insert(fpsBoostConns, workspace.DescendantAdded:Connect(function(e)
-        if not Sys.FPSBoost then return end
+    workspace.DescendantAdded:Connect(function(e)
         if isEffect(e) then
             disableEffect(e)
         end
-    end))
+    end)
 
     local function removeShadow(e)
         if e:IsA("BasePart") then
@@ -1442,40 +1632,43 @@ local function EnableFPSBoost()
         removeShadow(f)
     end
 
-    table.insert(fpsBoostConns, workspace.DescendantAdded:Connect(function(e)
-        if not Sys.FPSBoost then return end
+    workspace.DescendantAdded:Connect(function(e)
         removeShadow(e)
-    end))
-end
+    end)
 
-local function DisableFPSBoost()
-    for _, c in ipairs(fpsBoostConns) do
-        pcall(function()
-            c:Disconnect()
-        end)
+    local function removeSurface(e)
+        if e:IsA("SurfaceAppearance") then
+            e:Destroy()
+        end
     end
-    fpsBoostConns = {}
-    local b = Lighting
-    if fpsBoostOrig.GlobalShadows ~= nil then
-        b.GlobalShadows = fpsBoostOrig.GlobalShadows
-    end
-    if fpsBoostOrig.FogEnd then
-        b.FogEnd = fpsBoostOrig.FogEnd
-    end
-    fpsBoostOrig = {}
-end
 
-local function ToggleFPSBoost(e)
-    Sys.FPSBoost = e
-    if e then
-        EnableFPSBoost()
-    else
-        DisableFPSBoost()
+    for _, f in ipairs(workspace:GetDescendants()) do
+        removeSurface(f)
     end
-    Save()
-end
 
-local noAnimConns = {}
+    workspace.DescendantAdded:Connect(function(e)
+        removeSurface(e)
+    end)
+
+    local function applyCameraSettings(f)
+        if f then
+            f.FieldOfView = 70
+            f.CameraType = Enum.CameraType.Custom
+        end
+    end
+
+    applyCameraSettings(workspace.CurrentCamera)
+    workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        applyCameraSettings(workspace.CurrentCamera)
+    end)
+
+    local threshold = 0.15
+    a.Heartbeat:Connect(function(dt)
+        if dt > threshold then
+            task.wait()
+        end
+    end)
+end
 
 local function StopAnimationsOnInstance(inst)
     if inst:IsA("Animator") or inst:IsA("Humanoid") or inst:IsA("AnimationController") then
@@ -1490,43 +1683,23 @@ local function StopAnimationsOnInstance(inst)
                 end
             end)
             if animator.AnimationPlayed then
-                local conn = animator.AnimationPlayed:Connect(function(track)
+                animator.AnimationPlayed:Connect(function(track)
                     track:Stop()
                 end)
-                table.insert(noAnimConns, conn)
             end
         end
     end
 end
 
-local function EnableNoAnimations()
+local function DisableAllAnimations()
+    if noAnimationsEnabled then return end
+    noAnimationsEnabled = true
     for _, d in ipairs(workspace:GetDescendants()) do
         StopAnimationsOnInstance(d)
     end
-    local conn = workspace.DescendantAdded:Connect(function(d)
-        if not Sys.NoAnim then return end
+    workspace.DescendantAdded:Connect(function(d)
         StopAnimationsOnInstance(d)
     end)
-    table.insert(noAnimConns, conn)
-end
-
-local function DisableNoAnimations()
-    for _, c in ipairs(noAnimConns) do
-        pcall(function()
-            c:Disconnect()
-        end)
-    end
-    noAnimConns = {}
-end
-
-local function ToggleNoAnimations(e)
-    Sys.NoAnim = e
-    if e then
-        EnableNoAnimations()
-    else
-        DisableNoAnimations()
-    end
-    Save()
 end
 
 local Gui = Instance.new("ScreenGui")
@@ -1860,6 +2033,7 @@ CTGuiToggle(MCGui, "Auto Destroy Turrets", yPosMain, "ADT", function(v)
     Save()
 end)
 yPosMain = yPosMain + spacing
+
 CTGuiToggle(MCGui, "Unlock Base on Steal", yPosMain, "UBS", function(v)
     Sys.UBS = v
     Save()
@@ -1935,10 +2109,18 @@ yPosESP = yPosESP + spacing
 
 local yPosFPS = 0
 
-CTGuiToggle(FCGui, "Boost Performance", yPosFPS, "FPSBoost", ToggleFPSBoost)
+CTGuiToggle(FCGui, "Boost Performance", yPosFPS, "FPSBoost", function(v)
+    if v then
+        EnableFPSBoost()
+    end
+end)
 yPosFPS = yPosFPS + spacing
 
-CTGuiToggle(FCGui, "No Animations", yPosFPS, "NoAnim", ToggleNoAnimations)
+CTGuiToggle(FCGui, "No Animations", yPosFPS, "NoAnim", function(v)
+    if v then
+        DisableAllAnimations()
+    end
+end)
 yPosFPS = yPosFPS + spacing
 
 Track(UserInputService.InputBegan:Connect(function(i, g)
@@ -1957,8 +2139,8 @@ if Sys.AR then ToggleAR(true) end
 if Sys.CD then ToggleDesyncHook(true) end
 if Sys.ABD then ToggleAntiBee(true) end
 if Sys.BaseXRay then ToggleBaseXRay(true) end
-if Sys.FPSBoost then ToggleFPSBoost(true) end
-if Sys.NoAnim then ToggleNoAnimations(true) end
+if Sys.FPSBoost then EnableFPSBoost() end
+if Sys.NoAnim then DisableAllAnimations() end
 
 local lf = 0
 Track(RunService.Heartbeat:Connect(function(dt)
