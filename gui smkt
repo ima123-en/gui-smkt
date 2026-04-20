@@ -39,11 +39,12 @@ local IS_MOBILE = isMobile()
 getgenv().SMKT_SYS = {
     AR = false, IJ = false, AE = false, CD = false, CS = false,
     ABD = false, ADT = false,
-    UBS = false,
     PlayerESP = false, BrainrotESP = false, SubspaceESP = false,
     DuelBaseESP = false, BaseXRay = false, TracerESP = false,
     FPSBoost = false, NoAnim = false,
     MIN_GEN_VALUE = 50000000, CarpetSpeedKey = "Q", CurrentTab = "Main",
+    Device = "PC",
+    GuiScale = nil,
     Conns = {}
 }
 local Sys = getgenv().SMKT_SYS
@@ -58,6 +59,13 @@ pcall(function()
         end
     end
 end)
+
+if Sys.Device == nil then
+    Sys.Device = IS_MOBILE and "Mobile" or "PC"
+end
+if Sys.GuiScale == nil then
+    Sys.GuiScale = (Sys.Device == "Mobile") and (1/2.4) or 1
+end
 
 local function Save()
     pcall(function()
@@ -1527,13 +1535,6 @@ Track(RunService.Heartbeat:Connect(function(dt)
     end
 end))
 
-Track(LocalPlayer:GetAttributeChangedSignal("Stealing"):Connect(function()
-    local isStealing = LocalPlayer:GetAttribute("Stealing")
-    if isStealing and Sys.UBS then
-        triggerClosestUnlock(nil, 19)
-    end
-end))
-
 local carpetSpeedKeyCode = Enum.KeyCode[Sys.CarpetSpeedKey] or Enum.KeyCode.Q
 
 local fpsBoostEnabled = false
@@ -1707,12 +1708,10 @@ Gui.Name = "SMKTHub"
 Gui.ResetOnSpawn = false
 Gui.Parent = CoreGui
 
-do
-    local uiScale = Instance.new("UIScale")
-    uiScale.Name = "SMKT_Scale"
-    uiScale.Scale = IS_MOBILE and (1/2.4) or 1
-    uiScale.Parent = Gui
-end
+local uiScale = Instance.new("UIScale")
+uiScale.Name = "SMKT_Scale"
+uiScale.Scale = Sys.GuiScale or 1
+uiScale.Parent = Gui
 
 local TopBar = Instance.new("Frame", Gui)
 TopBar.Size = UDim2.new(0, 420, 0, 48)
@@ -1846,7 +1845,7 @@ local FPSButton = Instance.new("TextButton", TCGui)
 FPSButton.Size = UDim2.new(0.32, 0, 1, 0)
 FPSButton.Position = UDim2.new(0.68, 0, 0, 0)
 FPSButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-FPSButton.Text = "FPS"
+FPSButton.Text = "Device"
 FPSButton.Font = Enum.Font.GothamBold
 FPSButton.TextSize = 12
 FPSButton.TextColor3 = Color3.fromRGB(180, 180, 190)
@@ -1915,7 +1914,7 @@ ESPButton.MouseButton1Click:Connect(function()
 end)
 
 FPSButton.MouseButton1Click:Connect(function()
-    SwitchTabGUI2("FPS")
+    SwitchTabGUI2("Device")
 end)
 
 local function CTGuiToggle(parent, name, yPos, stateVar, cb, kbVar)
@@ -2034,12 +2033,6 @@ CTGuiToggle(MCGui, "Auto Destroy Turrets", yPosMain, "ADT", function(v)
 end)
 yPosMain = yPosMain + spacing
 
-CTGuiToggle(MCGui, "Unlock Base on Steal", yPosMain, "UBS", function(v)
-    Sys.UBS = v
-    Save()
-end)
-yPosMain = yPosMain + spacing
-
 local SBMain = Instance.new("Frame", MCGui)
 SBMain.Size = UDim2.new(1, 0, 0, 28)
 SBMain.Position = UDim2.new(0, 0, 0, yPosMain + 10)
@@ -2113,6 +2106,7 @@ CTGuiToggle(FCGui, "Boost Performance", yPosFPS, "FPSBoost", function(v)
     if v then
         EnableFPSBoost()
     end
+    Save()
 end)
 yPosFPS = yPosFPS + spacing
 
@@ -2120,8 +2114,203 @@ CTGuiToggle(FCGui, "No Animations", yPosFPS, "NoAnim", function(v)
     if v then
         DisableAllAnimations()
     end
+    Save()
 end)
+yPosFPS = yPosFPS + spacing + 10
+
+local function CreateDeviceRow(parent, text, yPos)
+    local h = Instance.new("Frame", parent)
+    h.Size = UDim2.new(1, 0, 0, 32)
+    h.Position = UDim2.new(0, 0, 0, yPos)
+    h.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    h.BorderSizePixel = 0
+    Instance.new("UICorner", h).CornerRadius = UDim.new(0, 8)
+
+    local l = Instance.new("TextLabel", h)
+    l.Size = UDim2.new(0.6, 0, 1, 0)
+    l.Position = UDim2.new(0, 12, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.Font = Enum.Font.Gotham
+    l.TextSize = 12
+    l.TextColor3 = Color3.fromRGB(180, 180, 190)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+
+    local bg = Instance.new("Frame", h)
+    bg.Size = UDim2.new(0, 70, 0, 22)
+    bg.Position = UDim2.new(1, -82, 0.5, -11)
+    bg.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    bg.BorderSizePixel = 0
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
+
+    local t = Instance.new("TextLabel", bg)
+    t.Size = UDim2.new(1, 0, 1, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Activate"
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 11
+    t.TextColor3 = Color3.fromRGB(180, 180, 190)
+
+    local btn = Instance.new("TextButton", h)
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+
+    local function set(on)
+        TweenService:Create(bg, TweenInfo.new(0.15), {
+            BackgroundColor3 = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(35, 35, 40)
+        }):Play()
+        TweenService:Create(t, TweenInfo.new(0.15), {
+            TextColor3 = on and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(180, 180, 190)
+        }):Play()
+        TweenService:Create(l, TweenInfo.new(0.15), {
+            TextColor3 = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 190)
+        }):Play()
+    end
+
+    return {Button = btn, Set = set}
+end
+
+local pcRow = CreateDeviceRow(FCGui, "PC version", yPosFPS)
 yPosFPS = yPosFPS + spacing
+local mobileRow = CreateDeviceRow(FCGui, "Mobile version", yPosFPS)
+yPosFPS = yPosFPS + spacing + 10
+
+local scaleFrame = Instance.new("Frame", FCGui)
+scaleFrame.Size = UDim2.new(1, 0, 0, 40)
+scaleFrame.Position = UDim2.new(0, 0, 0, yPosFPS)
+scaleFrame.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
+scaleFrame.BorderSizePixel = 0
+Instance.new("UICorner", scaleFrame).CornerRadius = UDim.new(0, 8)
+
+local scaleLabel = Instance.new("TextLabel", scaleFrame)
+scaleLabel.Size = UDim2.new(0, 100, 1, 0)
+scaleLabel.Position = UDim2.new(0, 12, 0, 0)
+scaleLabel.BackgroundTransparency = 1
+scaleLabel.Text = "GUI Scale"
+scaleLabel.Font = Enum.Font.Gotham
+scaleLabel.TextSize = 12
+scaleLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
+scaleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local barBg = Instance.new("Frame", scaleFrame)
+barBg.Size = UDim2.new(0.55, 0, 0, 6)
+barBg.Position = UDim2.new(0, 110, 0.5, -3)
+barBg.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+barBg.BorderSizePixel = 0
+Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+
+local barFill = Instance.new("Frame", barBg)
+barFill.Size = UDim2.new(0, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(120, 200, 255)
+barFill.BorderSizePixel = 0
+Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+local knob = Instance.new("Frame", barBg)
+knob.Size = UDim2.new(0, 10, 0, 16)
+knob.AnchorPoint = Vector2.new(0.5, 0.5)
+knob.Position = UDim2.new(0, 0, 0.5, 0)
+knob.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
+knob.BorderSizePixel = 0
+Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+local scaleInput = Instance.new("TextBox", barBg)
+scaleInput.Size = UDim2.new(1, -4, 1, 8)
+scaleInput.Position = UDim2.new(0.5, 0, 0.5, 0)
+scaleInput.AnchorPoint = Vector2.new(0.5, 0.5)
+scaleInput.BackgroundTransparency = 1
+scaleInput.BorderSizePixel = 0
+scaleInput.Text = ""
+scaleInput.Font = Enum.Font.GothamBold
+scaleInput.TextSize = 10
+scaleInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+scaleInput.TextXAlignment = Enum.TextXAlignment.Center
+scaleInput.ClearTextOnFocus = false
+
+local draggingScale = false
+
+local function setScaleUI(norm)
+    norm = math.clamp(norm, 0.2, 1)
+    Sys.GuiScale = norm
+    uiScale.Scale = norm
+    local pct = math.floor(norm * 100 + 0.5)
+    scaleInput.Text = tostring(pct)
+    barFill.Size = UDim2.new(norm, 0, 1, 0)
+    knob.Position = UDim2.new(norm, 0, 0.5, 0)
+end
+
+local function applyPercentInput()
+    local txt = scaleInput.Text or ""
+    txt = txt:gsub("%%", ""):gsub("%s+", "")
+    local num = tonumber(txt)
+    if not num then
+        setScaleUI(Sys.GuiScale or 1)
+        return
+    end
+    num = math.clamp(num, 20, 100)
+    local norm = num / 100
+    setScaleUI(norm)
+    Save()
+end
+
+scaleInput.FocusLost:Connect(function()
+    applyPercentInput()
+end)
+
+scaleInput.Focused:Connect(function()
+    draggingScale = false
+end)
+
+setScaleUI(Sys.GuiScale or 1)
+
+barBg.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingScale = true
+        local mouseX = UserInputService:GetMouseLocation().X
+        local rel = math.clamp(mouseX - barBg.AbsolutePosition.X, 0, barBg.AbsoluteSize.X)
+        local norm = rel / barBg.AbsoluteSize.X
+        setScaleUI(norm)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if draggingScale and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local mouseX = UserInputService:GetMouseLocation().X
+        local rel = math.clamp(mouseX - barBg.AbsolutePosition.X, 0, barBg.AbsoluteSize.X)
+        local norm = rel / barBg.AbsoluteSize.X
+        setScaleUI(norm)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if draggingScale then
+            draggingScale = false
+            Save()
+        end
+    end
+end)
+
+local function updateDeviceRows()
+    pcRow.Set(Sys.Device == "PC")
+    mobileRow.Set(Sys.Device == "Mobile")
+end
+
+updateDeviceRows()
+
+pcRow.Button.MouseButton1Click:Connect(function()
+    Sys.Device = "PC"
+    setScaleUI(1)
+    updateDeviceRows()
+    Save()
+end)
+
+mobileRow.Button.MouseButton1Click:Connect(function()
+    Sys.Device = "Mobile"
+    setScaleUI(1/2.4)
+    updateDeviceRows()
+    Save()
+end)
 
 Track(UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
@@ -2162,7 +2351,6 @@ Track(task.spawn(function()
             if Sys.IJ then table.insert(p, "IJ") end
             if Sys.ABD then table.insert(p, "ABD") end
             if Sys.ADT then table.insert(p, "ADT") end
-            if Sys.UBS then table.insert(p, "UBS") end
             if Sys.FPSBoost then table.insert(p, "FPS") end
             if Sys.NoAnim then table.insert(p, "NOANIM") end
 
