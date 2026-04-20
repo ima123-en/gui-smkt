@@ -2296,20 +2296,35 @@ local function updateDeviceRows()
     mobileRow.Set(Sys.Device == "Mobile")
 end
 
+local function RefreshOtherPanels()
+    local env = getgenv and getgenv() or _G
+    if env.SMKT_RefreshPanels then
+        pcall(env.SMKT_RefreshPanels)
+    end
+end
+
 updateDeviceRows()
 
 pcRow.Button.MouseButton1Click:Connect(function()
+    local oldDevice = Sys.Device
     Sys.Device = "PC"
     setScaleUI(1)
     updateDeviceRows()
     Save()
+    if oldDevice ~= "PC" then
+        RefreshOtherPanels()
+    end
 end)
 
 mobileRow.Button.MouseButton1Click:Connect(function()
+    local oldDevice = Sys.Device
     Sys.Device = "Mobile"
     setScaleUI(1/2.4)
     updateDeviceRows()
     Save()
+    if oldDevice ~= "Mobile" then
+        RefreshOtherPanels()
+    end
 end)
 
 Track(UserInputService.InputBegan:Connect(function(i, g)
