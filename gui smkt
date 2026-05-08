@@ -45,9 +45,7 @@ getgenv().SMKT_SYS = {
     MIN_GEN_VALUE = 50000000, CarpetSpeedKey = "Q", CurrentTab = "Main",
     Device = "PC",
     GuiScale = nil,
-    Conns = {},
-    ReenableDesyncOnRag = false,
-    CarpetDesyncKey = "G"
+    Conns = {}
 }
 local Sys = getgenv().SMKT_SYS
 
@@ -67,9 +65,6 @@ if Sys.Device == nil then
 end
 if Sys.GuiScale == nil then
     Sys.GuiScale = (Sys.Device == "Mobile") and (1/2.4) or 1
-end
-if not Sys.CarpetDesyncKey or Sys.CarpetDesyncKey == "" then
-    Sys.CarpetDesyncKey = "G"
 end
 
 local function Save()
@@ -169,7 +164,6 @@ end
 
 local desyncHook = nil
 local function ToggleDesyncHook(state)
-    Sys.CD = state
     if state then
         if desyncHook then return end
         pcall(function()
@@ -203,23 +197,6 @@ local function ToggleDesyncHook(state)
             desyncHook = nil
         end
     end
-end
-
-local function ReenableDesyncOnce()
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local bp = LocalPlayer.Backpack
-        if not (char and hum and bp) then return end
-        local carpet = bp:FindFirstChild("Rainbow Carpet") or bp:FindFirstChild("Flying Carpet") or char:FindFirstChild("Rainbow Carpet") or char:FindFirstChild("Flying Carpet")
-        if carpet then
-            hum:EquipTool(carpet)
-            task.wait()
-            carpet:Activate()
-            task.wait(0.2)
-            hum:UnequipTools()
-        end
-    end)
 end
 
 local carpetSpeedConnection = nil
@@ -366,9 +343,6 @@ local function hookARV2(char)
             pcall(function()
                 workspace.CurrentCamera.CameraSubject = hum
             end)
-            if Sys.ReenableDesyncOnRag and Sys.CD then
-                ReenableDesyncOnce()
-            end
         end
     end))
 
@@ -1562,7 +1536,6 @@ Track(RunService.Heartbeat:Connect(function(dt)
 end))
 
 local carpetSpeedKeyCode = Enum.KeyCode[Sys.CarpetSpeedKey] or Enum.KeyCode.Q
-local carpetDesyncKeyCode = Enum.KeyCode[Sys.CarpetDesyncKey] or Enum.KeyCode.G
 
 local fpsBoostEnabled = false
 local noAnimationsEnabled = false
@@ -1944,8 +1917,6 @@ FPSButton.MouseButton1Click:Connect(function()
     SwitchTabGUI2("Device")
 end)
 
-local waitingForKeyVar = nil
-
 local function CTGuiToggle(parent, name, yPos, stateVar, cb, kbVar)
     local h = Instance.new("Frame", parent)
     h.Size = UDim2.new(1, 0, 0, 38)
@@ -1968,35 +1939,31 @@ local function CTGuiToggle(parent, name, yPos, stateVar, cb, kbVar)
         kb.Size = UDim2.new(0, 36, 0, 22)
         kb.Position = UDim2.new(1, -100, 0.5, -11)
         kb.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        kb.Text = Sys[kbVar] or ""
+        kb.Text = Sys[kbVar] or "Q"
         kb.Font = Enum.Font.GothamBold
         kb.TextSize = 10
         kb.TextColor3 = Color3.fromRGB(200, 200, 210)
         Instance.new("UICorner", kb).CornerRadius = UDim.new(0, 6)
+        local wk = false
         kb.MouseButton1Click:Connect(function()
-            waitingForKeyVar = kbVar
+            wk = true
             kb.Text = "..."
         end)
         Track(UserInputService.InputBegan:Connect(function(i, g)
             if g then return end
-            if waitingForKeyVar and i.UserInputType == Enum.UserInputType.Keyboard then
+            if wk and i.UserInputType == Enum.UserInputType.Keyboard then
+                wk = false
                 local kn = i.KeyCode.Name
                 if kn and kn ~= "Unknown" then
-                    Sys[waitingForKeyVar] = kn
-                    if waitingForKeyVar == "CarpetSpeedKey" then
-                        carpetSpeedKeyCode = i.KeyCode
-                    elseif waitingForKeyVar == "CarpetDesyncKey" then
-                        carpetDesyncKeyCode = i.KeyCode
-                    end
-                    Save()
+                    Sys[kbVar] = kn
                     kb.Text = kn
+                    carpetSpeedKeyCode = i.KeyCode
+                    Save()
                 else
-                    kb.Text = Sys[waitingForKeyVar] or ""
+                    kb.Text = Sys[kbVar] or "Q"
                 end
-                waitingForKeyVar = nil
             end
         end))
-        kb.Text = Sys[kbVar] or (kbVar == "CarpetSpeedKey" and "Q" or (kbVar == "CarpetDesyncKey" and "G" or ""))
     end
 
     local bg = Instance.new("Frame", h)
@@ -2051,59 +2018,7 @@ yPosMain = yPosMain + spacing
 CTGuiToggle(MCGui, "Carpet Desync", yPosMain, "CD", function(v)
     ToggleDesyncHook(v)
     Save()
-end, "CarpetDesyncKey")
-yPosMain = yPosMain + spacing
-
-local reFrame = Instance.new("Frame", MCGui)
-reFrame.Size = UDim2.new(1, 0, 0, 24)
-reFrame.Position = UDim2.new(0, 0, 0, yPosMain - 4)
-reFrame.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
-reFrame.BorderSizePixel = 0
-Instance.new("UICorner", reFrame).CornerRadius = UDim.new(0, 6)
-
-local reLabel = Instance.new("TextLabel", reFrame)
-reLabel.Size = UDim2.new(0.6, 0, 1, 0)
-reLabel.Position = UDim2.new(0, 12, 0, 0)
-reLabel.BackgroundTransparency = 1
-reLabel.Text = "Reenable desync on ragdoll"
-reLabel.Font = Enum.Font.Gotham
-reLabel.TextSize = 11
-reLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
-reLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local reBtn = Instance.new("TextButton", reFrame)
-reBtn.Size = UDim2.new(0, 70, 0, 20)
-reBtn.Position = UDim2.new(1, -82, 0.5, -10)
-reBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-reBtn.BorderSizePixel = 0
-reBtn.Text = "Off"
-reBtn.Font = Enum.Font.GothamBold
-reBtn.TextSize = 11
-reBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
-Instance.new("UICorner", reBtn).CornerRadius = UDim.new(0, 6)
-
-local function updateReBtn()
-    if Sys.ReenableDesyncOnRag then
-        TweenService:Create(reBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-        TweenService:Create(reLabel, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-        reBtn.Text = "On"
-        reBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-    else
-        TweenService:Create(reBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(35, 35, 40)}):Play()
-        TweenService:Create(reLabel, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(180, 180, 190)}):Play()
-        reBtn.Text = "Off"
-        reBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
-    end
-end
-
-updateReBtn()
-
-reBtn.MouseButton1Click:Connect(function()
-    Sys.ReenableDesyncOnRag = not Sys.ReenableDesyncOnRag
-    updateReBtn()
-    Save()
 end)
-
 yPosMain = yPosMain + spacing
 local csUpd = CTGuiToggle(MCGui, "Carpet Speed", yPosMain, "CS", function(v)
     setCarpetSpeed(v)
@@ -2311,7 +2226,6 @@ scaleInput.TextSize = 10
 scaleInput.TextColor3 = Color3.fromRGB(255, 255, 255)
 scaleInput.TextXAlignment = Enum.TextXAlignment.Center
 scaleInput.ClearTextOnFocus = false
-scaleInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
 
 local draggingScale = false
 
@@ -2415,19 +2329,13 @@ end)
 
 Track(UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
-    if i.UserInputType == Enum.UserInputType.Keyboard then
-        local k = i.KeyCode
-        if k == carpetSpeedKeyCode then
-            Sys.CS = not Sys.CS
-            setCarpetSpeed(Sys.CS)
-            if csUpd then
-                csUpd(Sys.CS)
-            end
-            Save()
-        elseif k == carpetDesyncKeyCode then
-            ToggleDesyncHook(not Sys.CD)
-            Save()
+    if i.KeyCode == carpetSpeedKeyCode then
+        Sys.CS = not Sys.CS
+        setCarpetSpeed(Sys.CS)
+        if csUpd then
+            csUpd(Sys.CS)
         end
+        Save()
     end
 end))
 
@@ -2460,7 +2368,6 @@ Track(task.spawn(function()
             if Sys.ADT then table.insert(p, "ADT") end
             if Sys.FPSBoost then table.insert(p, "FPS") end
             if Sys.NoAnim then table.insert(p, "NOANIM") end
-            if Sys.ReenableDesyncOnRag then table.insert(p, "ReDesync") end
 
             STMain.Text = #p > 0 and "Active: " .. table.concat(p, ", ") or "Ready"
             SDMain.BackgroundColor3 = #p > 0 and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(100, 100, 110)
